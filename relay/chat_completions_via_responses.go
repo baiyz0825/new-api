@@ -123,6 +123,10 @@ func relayResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, adaptor 
 
 	info.RelayMode = relayconstant.RelayModeResponses
 	info.RequestURLPath = "/v1/responses"
+	if info.ChannelType == constant.ChannelTypeCodex {
+		// The Codex subscription endpoint rejects the Responses API metadata field.
+		responsesReq.Metadata = nil
+	}
 
 	convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *responsesReq)
 	if err != nil {

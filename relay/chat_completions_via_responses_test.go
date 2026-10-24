@@ -161,7 +161,7 @@ func TestRecalcQuotaFromRatiosRejectsAllInvalidAdjustedRatios(t *testing.T) {
 	assert.True(t, info.PriceData.HasOtherRatio("duration"))
 }
 
-func TestTextRequestViaResponsesConvertsClaudeDirectly(t *testing.T) {
+func TestTextRequestViaResponsesDropsMetadataForCodex(t *testing.T) {
 	type capturedRequest struct {
 		path string
 		body []byte
@@ -198,7 +198,7 @@ func TestTextRequestViaResponsesConvertsClaudeDirectly(t *testing.T) {
 		OriginModelName:        "gpt-5.6-sol",
 		RequestConversionChain: []relaytypes.RelayFormat{relaytypes.RelayFormatClaude},
 		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelType:       constant.ChannelTypeOpenAI,
+			ChannelType:       constant.ChannelTypeCodex,
 			ChannelBaseUrl:    server.URL,
 			ApiKey:            "test-key",
 			UpstreamModelName: "gpt-5.6-sol",
@@ -208,6 +208,7 @@ func TestTextRequestViaResponsesConvertsClaudeDirectly(t *testing.T) {
 	adaptor.Init(info)
 	request := &dto.ClaudeRequest{
 		Model:    "gpt-5.6-sol",
+		Metadata: json.RawMessage(`{"user_id":"claude-code"}`),
 		Thinking: &dto.Thinking{Type: "adaptive", Display: "summarized"},
 		Messages: []dto.ClaudeMessage{{Role: "user", Content: "hello"}},
 	}
@@ -224,6 +225,7 @@ func TestTextRequestViaResponsesConvertsClaudeDirectly(t *testing.T) {
 	var upstreamBody map[string]any
 	require.NoError(t, common.Unmarshal(upstream.body, &upstreamBody))
 	assert.NotContains(t, upstreamBody, "messages")
+	assert.NotContains(t, upstreamBody, "metadata")
 	reasoning, ok := upstreamBody["reasoning"].(map[string]any)
 	require.True(t, ok)
 	assert.Equal(t, "high", reasoning["effort"])
