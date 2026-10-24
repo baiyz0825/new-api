@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -90,6 +91,31 @@ func TestIsResponsesEventStreamContentType(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, isResponsesEventStreamContentType(tt.contentType))
+		})
+	}
+}
+
+func TestIsResponsesEventStreamSSEBodyPreservesBody(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want bool
+	}{
+		{name: "event prefix", body: "event: response.created\n\ndata: {}\n\n", want: true},
+		{name: "data prefix with bom and whitespace", body: "\xef\xbb\xbf \ndata: {}\n\n", want: true},
+		{name: "json body", body: `{"id":"resp_1"}`, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := io.NopCloser(strings.NewReader(tt.body))
+			var body io.ReadCloser
+			assert.Equal(t, tt.want, isResponsesEventStreamSSEBody(original, &body))
+			require.NotNil(t, body)
+			defer body.Close()
+			read, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.Equal(t, tt.body, string(read))
 		})
 	}
 }

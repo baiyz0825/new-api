@@ -1,6 +1,8 @@
 package relay
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -166,6 +168,9 @@ func relayResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, adaptor 
 	httpResp = resp.(*http.Response)
 	clientStream := info.IsStream
 	upstreamStream := isResponsesEventStreamContentType(httpResp.Header.Get("Content-Type"))
+	if !upstreamStream {
+		upstreamStream = isResponsesEventStreamSSEBody(httpResp.Body, &httpResp.Body)
+	}
 	info.IsStream = clientStream || upstreamStream
 	if httpResp.StatusCode != http.StatusOK {
 		newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
@@ -202,3 +207,38 @@ func relayResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, adaptor 
 func isResponsesEventStreamContentType(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "text/event-stream")
 }
+
+func isResponsesEventStreamSSEBody(rc io.ReadCloser, out *io.ReadCloser) bool {
+	if rc == nil {
+		return false
+	}
+	reader := bufio.NewReader(rc)
+	prefix := make([]byte, 0, 64)
+	for len(prefix) < cap(prefix) {
+		b, err := reader.ReadByte()
+		if err != nil {
+			break
+		}
+		prefix = append(prefix, b)
+		trimmed := strings.TrimPrefix(string(prefix), "\xef\xbb\xbf")
+		trimmed = strings.TrimLeft(trimmed, " \t\r\n")
+		if strings.HasPrefix(trimmed, "event:") || strings.HasPrefix(trimmed, "data:") {
+			*out = &peekReadCloser{Reader: io.MultiReader(bytes.NewReader(prefix), reader), closer: rc}
+			return true
+		}
+		if len(trimmed) > 0 && (trimmed[0] == '{' || trimmed[0] == '[' || trimmed[0] == '"') {
+			break
+		}
+	}
+	*out = &peekReadCloser{Reader: io.MultiReader(bytes.NewReader(prefix), reader), closer: rc}
+	return false
+}
+
+type peekReadCloser struct {
+	Reader io.Reader
+	closer io.ReadCloser
+}
+
+func (p *peekReadCloser) Read(b []byte) (int, error) { return p.Reader.Read(b) }
+
+func (p *peekReadCloser) Close() error { return p.closer.Close() }
